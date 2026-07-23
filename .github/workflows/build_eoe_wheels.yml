@@ -1,0 +1,52 @@
+name: Build EoE wheels
+
+# Builds Windows and Linux wheels of the EoE-enabled pysoem and attaches them
+# to the "eoe-1.1.13-wheels" GitHub release, so machines without build tools
+# can pip install them by URL.
+on: workflow_dispatch
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.3.0
+        env:
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-*"
+          CIBW_SKIP: "*-musllinux* *-win32 *_i686"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eoe-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  attach_to_release:
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: eoe-wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create release and upload wheels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create eoe-1.1.13-wheels --repo ${{ github.repository }} \
+            --title "pysoem 1.1.13 + EoE wheels" \
+            --notes "Prebuilt wheels of pysoem 1.1.13 with EoE support (bnjmnp/pysoem#163) for Windows and Linux, Python 3.9-3.12." \
+            --target ${{ github.sha }} || true
+          gh release upload eoe-1.1.13-wheels dist/*.whl --repo ${{ github.repository }} --clobber
